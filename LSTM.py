@@ -333,12 +333,4 @@ class LSTM(object):
 		return (output_activation-y)
 
 if __name__ == '__main__':
-	location = 'C:\\Users\\Lukasz Obara\\OneDrive\\Documents\\'\
-			 +'Machine Learning\\Text Files\\test.csv'
-	temp = np.genfromtxt(location, delimiter=',')
-	my_data = [np.array(arr) for arr in temp[:, :, np.newaxis]]
-
-	n = 40
-	sequence = [my_data[i:i+n] for i in range(0, len(my_data), n)]
-	lstm = LSTM(sequence[7], 100)
-	lstm.train(len(sequence[7]), 150, 0.1, 0.9, learning_decay=0.00)
+	pass
