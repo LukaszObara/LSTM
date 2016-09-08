@@ -21,7 +21,7 @@ import numpy as np
 # User Libraries
 from Text_Vec import Text_Vec
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
 __author__ = "Lukasz Obara"
 
 # Misc functions 
@@ -41,7 +41,7 @@ def d_sigmoid(z):
 	return sigmoid(z)*(1-sigmoid(z))
 
 class LSTM(object):
-	def __init__(self, data, hidden_size):
+	def __init__(self, data, hidden_size, eps=0.001):
 		self.data = data
 		self.time_periods = len(data)-1
 		self.hidden_size = hidden_size
@@ -62,11 +62,7 @@ class LSTM(object):
 		self.bias_g = np.array([np.ones(hidden_size)]).T * 1.5 # b_g
 		self.bias_o = np.array([np.ones(hidden_size)]).T * 1.5 # b_o
 
-		# self.bias_f = np.array([np.random.rand(hidden_size)]).T # b_f
-		# self.bias_i = np.array([np.random.rand(hidden_size)]).T # b_i
-		# self.bias_g = np.array([np.random.rand(hidden_size)]).T # b_g
-		# self.bias_o = np.array([np.random.rand(hidden_size)]).T # b_o
-		# initializes the weight and bias for the output layer
+		# Initializes the weight and bias for the output layer
 		# This last layer is identical to that found in the RNN that was
 		# built before. It has the role of setting the correct dimension
 		# before being subjected to the loss function. 
@@ -76,91 +72,88 @@ class LSTM(object):
 		self.h_0 = np.array([np.zeros(hidden_size)]).T
 		self.cell_0 = np.array([np.zeros(self.hidden_size)]).T
 
-	def SGD(self, epochs, eta, decay_rate):
-		"""Updates the network's weights and biases by applying gradient
-		descent using backpropagation through time. 
-		"""
-		cache_W_f, cache_W_i, cache_W_g, cache_W_o = 0, 0, 0, 0 
-		cache_U_f, cache_U_i, cache_U_g, cache_U_o = 0, 0, 0, 0
-		cache_bias_f, cache_bias_i, cache_bias_g, cache_bias_o = 0, 0, 0, 0
-		cache_V, cache_bias_d = 0, 0 
-		eps = 0.0001
+		# Initial cache values for update of RMSProp
+		self.cache_W_f = np.zeros((hidden_size, len(data[0])))
+		self.cache_W_i = np.zeros((hidden_size, len(data[0])))
+		self.cache_W_g = np.zeros((hidden_size, len(data[0])))
+		self.cache_W_o = np.zeros((hidden_size, len(data[0])))
+		self.cache_U_f = np.zeros((hidden_size, hidden_size))
+		self.cache_U_i = np.zeros((hidden_size, hidden_size))
+		self.cache_U_g = np.zeros((hidden_size, hidden_size))
+		self.cache_U_o = np.zeros((hidden_size, hidden_size))
+		self.cache_bias_f = np.zeros((hidden_size, 1))
+		self.cache_bias_i = np.zeros((hidden_size, 1))
+		self.cache_bias_g = np.zeros((hidden_size, 1))
+		self.cache_bias_o = np.zeros((hidden_size, 1))
+		self.cache_V = np.zeros((len(data[0]), hidden_size))
+		self.cache_bias_d = np.zeros((hidden_size, 1))
+		self.eps = eps
+
+	def train(self, seq_length, epochs, eta, decay_rate=0.9, learning_decay=0.0):
+		accuracy, evaluation_cost = [], []
+
+		sequences = [self.data[i:i+seq_length] \
+			 for i in range(0, len(self.data), seq_length)] 
 
 		for epoch in range(epochs):
-			print('epoch {}'.format(epoch))
-			delta_nabla_bias_f, delta_nabla_bias_i, delta_nabla_bias_g,\
-			delta_nabla_bias_o, delta_nabla_U_f, delta_nabla_U_i,\
-			delta_nabla_U_g, delta_nabla_U_o, delta_nabla_W_f, delta_nabla_W_i,\
-			delta_nabla_W_g, delta_nabla_W_o, delta_nabla_bias_d, \
-			delta_nabla_V = self.backward_pass()
+			# shuffle(sequences)
+			# print('epoch {}'.format(epoch))
+
+			for seq in sequences:
+				accu = 0
+				self.update(seq, epoch, eta, decay_rate, learning_decay)
+
+				final_text =  chr(np.argmax(seq))
+				_, _, _, _, _, _, outputs = self.feedforward()
 			
-			# Hiddent weight change of each gate
-			cache_W_f += decay_rate * cache_W_f \
-					  + (1 - decay_rate) * delta_nabla_W_f**2
-			self.weight_W_f -= eta * delta_nabla_W_f / (np.sqrt(cache_W_f) + eps)
+				for j in range(len(outputs)):
+					num = np.argmax(outputs[j])
+					final_text += chr(num)
 
-			cache_W_i += decay_rate * cache_W_i \
-					  + (1 - decay_rate) * delta_nabla_W_i**2
-			self.weight_W_i -= eta * delta_nabla_W_i / (np.sqrt(cache_W_i) + eps)
+			print(final_text + '\n')
 
-			cache_W_g += decay_rate * cache_W_g \
-					  + (1 - decay_rate) * delta_nabla_W_g**2
-			self.weight_W_g -= eta * delta_nabla_W_g / (np.sqrt(cache_W_g) + eps)
-			
-			cache_W_o += decay_rate * cache_W_o \
-					  + (1 - decay_rate) * delta_nabla_W_o**2
-			self.weight_W_o -= eta * delta_nabla_W_o / (np.sqrt(cache_W_o) + eps)
+	def update(self, seq, epoch, eta, decay_rate, learning_decay):
+		"""Updates the network's weights and biases by applying gradient
+		descent using backpropagation through time and RMSPROP. 
+		"""
+		def update_rule(cache_attr, x_attr, dx):
+			cache = getattr(self, cache_attr)
+			cache = decay_rate * cache + (1 - decay_rate) * dx**2
+			setattr(self, cache_attr, cache)
 
-			# Input weight change for each gate
-			cache_U_f += decay_rate * cache_U_f \
-					  + (1 - decay_rate) * delta_nabla_U_f**2
-			self.weight_U_f -= eta * delta_nabla_U_f / (np.sqrt(cache_U_f) + eps)			
-			
-			cache_U_i += decay_rate * cache_U_i \
-					  + (1 - decay_rate) * delta_nabla_U_i**2
-			self.weight_U_i -= eta * delta_nabla_U_i / (np.sqrt(cache_U_i) + eps)
+			x = getattr(self, x_attr)
+			x -= eta * dx / (np.sqrt(cache) + self.eps)
+			setattr(self, x_attr, x)
 
-			cache_U_g += decay_rate * cache_U_g \
-					  + (1 - decay_rate) * delta_nabla_U_g**2
-			self.weight_U_g -= eta * delta_nabla_U_g / (np.sqrt(cache_U_g) + eps)
+		eta = eta*np.exp(-epoch*learning_decay)
 
-			cache_U_o += decay_rate * cache_U_o \
-					  + (1 - decay_rate) * delta_nabla_U_o**2
-			self.weight_U_o -= eta * delta_nabla_U_o / (np.sqrt(cache_U_o) + eps)
+		delta_nabla_bias_f, delta_nabla_bias_i, delta_nabla_bias_g,\
+		delta_nabla_bias_o, delta_nabla_U_f, delta_nabla_U_i,\
+		delta_nabla_U_g, delta_nabla_U_o, delta_nabla_W_f, delta_nabla_W_i,\
+		delta_nabla_W_g, delta_nabla_W_o, delta_nabla_bias_d, \
+		delta_nabla_V = self.backward_pass()
 
-			# Change for the biases for each gate
-			cache_bias_f += decay_rate * cache_bias_f \
-						 + (1 - decay_rate) * delta_nabla_bias_f**2
-			self.bias_f -= eta * delta_nabla_bias_f / (np.sqrt(cache_bias_f) + eps)
+		# Hidden weight change of each gate
+		update_rule('cache_W_f', 'weight_W_f', delta_nabla_W_f)
+		update_rule('cache_W_i', 'weight_W_i', delta_nabla_W_i)
+		update_rule('cache_W_g', 'weight_W_g', delta_nabla_W_g)
+		update_rule('cache_W_o', 'weight_W_o', delta_nabla_W_o)
 
-			cache_bias_i += decay_rate * cache_bias_i \
-						 + (1 - decay_rate) * delta_nabla_bias_i**2
-			self.bias_f -= eta * delta_nabla_bias_i / (np.sqrt(cache_bias_i) + eps)
+		# Input weight change for each gate
+		update_rule('cache_U_f', 'weight_U_f', delta_nabla_U_f)
+		update_rule('cache_U_i', 'weight_U_i', delta_nabla_U_i)
+		update_rule('cache_U_g', 'weight_U_g', delta_nabla_U_g)
+		update_rule('cache_U_o', 'weight_U_o', delta_nabla_U_o)
 
-			cache_bias_g += decay_rate * cache_bias_g \
-						 + (1 - decay_rate) * delta_nabla_bias_g**2
-			self.bias_g -= eta * delta_nabla_bias_g / (np.sqrt(cache_bias_g) + eps)
+		# Bias change for each gate
+		update_rule('cache_bias_f', 'bias_f', delta_nabla_bias_f)
+		update_rule('cache_bias_i', 'bias_i', delta_nabla_bias_i)
+		update_rule('cache_bias_g', 'bias_g', delta_nabla_bias_g)
+		update_rule('cache_bias_o', 'bias_o', delta_nabla_bias_o)
 
-			cache_bias_o += decay_rate * cache_bias_o \
-						 + (1 - decay_rate) * delta_nabla_bias_o**2
-			self.bias_o -= eta * delta_nabla_bias_o / (np.sqrt(cache_bias_o) + eps)
-
-			# Change for the outputs
-			cache_V += decay_rate * cache_V \
-					+ (1 - decay_rate) * delta_nabla_V**2
-			self.weight_V -= eta * delta_nabla_V/ (np.sqrt(cache_V) + eps)
-
-			cache_bias_d += decay_rate * cache_bias_d \
-						 + (1 - decay_rate) * delta_nabla_bias_d**2
-			self.bias_d -= eta * delta_nabla_bias_d / (np.sqrt(cache_bias_d) + eps)
-
-			final_text = ''
-			_, _, _, _, _, _, outputs = self.feedforward()
-			for j in outputs:
-				num = np.argmax(j)
-				final_text += chr(num)
-
-			print(final_text)
+		# Output change
+		update_rule('cache_V', 'weight_V', delta_nabla_V)
+		update_rule('cache_bias_d', 'bias_d', delta_nabla_bias_d)
 
 	def feedforward(self):
 		"""Returns a tuple of lists `(f_t, i_t, g_t, o_t, C_t, h_t, p_t)`
@@ -357,10 +350,12 @@ class LSTM(object):
 		return (output_activation-y)
 
 if __name__ == '__main__':
-	test = [Text_Vec().convert_text('/test.txt')]
-	foo = test[0][0:10]
+	location = 'C:\\Users\\Lukasz Obara\\OneDrive\\Documents\\'\
+			 +'Machine Learning\\Text Files\\test.csv'
+	temp = np.genfromtxt(location, delimiter=',')
+	my_data = [np.array(arr) for arr in temp[:, :, np.newaxis]]
 
-	lstm = LSTM(foo, 100)
-	# lstm.feedforward()
-	lstm.SGD(50, .05, 0.99)
-	bias_g = np.array([np.random.rand(5)]).T
+	n = 10
+	sequence = [my_data[i:i+n] for i in range(0, len(my_data), n)]
+	lstm = LSTM(sequence[6], 127)
+	lstm.train(len(sequence[6]), 40, 0.17, 0.9, learning_decay=0.00)
