@@ -1,5 +1,5 @@
 # LSTM
-A simple LSTM with one hidden state, based off the work that was done for <a href="https://github.com/LukaszObara/RNN">RNN.py</a>RNN.py and works in a similar fashion. 
+A simple LSTM with one hidden state based off the work that was done for <a href="https://github.com/LukaszObara/RNN">RNN.py</a> and works in a similar fashion. The network was used for character generation and trained using Shakespeare.
 
 ## How It Works
 The network works in two steps. The first step involves initializing the network and the second step involves training the network. 
