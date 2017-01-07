@@ -1,5 +1,5 @@
 # LSTM
-A simple LSTM with one hidden state, based off the work that was done for RNN.py and works in a similar fashion. 
+A simple LSTM with one hidden state, based off the work that was done for <a href="https://github.com/LukaszObara/RNN">RNN.py</a>RNN.py and works in a similar fashion. 
 
 ## How It Works
 The network works in two steps. The first step involves initializing the network and the second step involves training the network. 
@@ -15,3 +15,8 @@ rnn = RNN(data, hidden_size, eps=0.0001)
 <b>learning_decay</b>: Annealing parameter for the exponetial decay. The smaller values indicate milder annealing of the learning rate. The default value is set to `0.0`<br>
 <b>randomize</b>: If set to `True` then the subsequences will be shuffle before beign processed further. The default value is set to `False`. <br>
 <b>print_final</b>: Prints the final output at the end of evey epoch. The default value is set to `True`. <br>
+
+# References
+<ol>
+<li>Goodfellow Ian, Bengio Yoshua, Courville Aaron, <em>Deep Learning</em>, MIT Press, 2016, http://www.deeplearningbook.org</li>
+</ol>
